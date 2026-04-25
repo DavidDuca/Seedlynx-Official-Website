@@ -55,11 +55,11 @@ button{font-family:'Barlow',sans-serif;cursor:pointer;border:none;background:non
 
 .nav-container{display:flex;align-items:center;justify-content:space-between;height:68px;width:min(1300px,94vw);margin:0 auto;padding:0 1rem;gap:1.5rem}
 
-.nav-logo{display:flex;align-items:center;gap:.7rem;flex-shrink:0;transition:opacity var(--t)}
+.nav-logo{display:flex;align-items:center; gap: 5px; flex-shrink:0;transition:opacity var(--t)}
 .nav-logo:hover{opacity:.85}
 .logo-svg{display:block;flex-shrink:0}
 .logo-wordmark{font-family:var(--font-display);font-weight:700;font-size:1.25rem;letter-spacing:.03em;color:var(--white);white-space:nowrap}
-
+.logo-img{width:40px;height:40px;}
 .nav-links{display:flex;align-items:center;gap:.25rem;list-style:none}
 .nav-link{display:flex;align-items:center;gap:.35rem;padding:.5rem .85rem;font-family:var(--font-body);font-weight:500;font-size:.9rem;color:var(--muted);border-radius:var(--r-sm);transition:color var(--t),background var(--t);white-space:nowrap}
 .nav-link:hover,.nav-link.active{color:var(--white);background:rgba(255,255,255,.06)}
