@@ -1,9 +1,30 @@
 /* ============================================================
-   SEEDLYNX — script.js  |  Canvas BG + Full Interactivity
+   SEEDLYNX — script.js
    ============================================================ */
 'use strict';
 
 const API_BASE = 'http://localhost:5000/api';
+const TIMEOUT_MS = 8000; // 8 second timeout before giving up
+
+/* ── Fetch with Timeout ─────────────────────────────────────
+   Wraps fetch() with an AbortController timeout so requests
+   don't hang forever when the server is offline.
+   ---------------------------------------------------------- */
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Is the server running?');
+    }
+    throw new Error('Cannot connect to server. Make sure the backend is running on port 5000.');
+  }
+}
 
 /* ── Canvas Particle Network Background ── */
 (function initCanvas() {
@@ -12,8 +33,6 @@ const API_BASE = 'http://localhost:5000/api';
   const ctx = canvas.getContext('2d');
   let W, H, particles, mouse = { x: -1000, y: -1000 };
 
-  const PARTICLE_COLOR = 'rgba(14,196,184,';
-  const LINE_COLOR     = 'rgba(14,196,184,';
   const PARTICLE_COUNT = () => Math.min(Math.floor(W * H / 14000), 80);
   const MAX_DIST = 140;
 
@@ -38,7 +57,6 @@ const API_BASE = 'http://localhost:5000/api';
   function draw() {
     ctx.clearRect(0, 0, W, H);
 
-    // Subtle radial gradient base
     const grad = ctx.createRadialGradient(W * .35, H * .35, 0, W * .5, H * .5, W * .7);
     grad.addColorStop(0, 'rgba(14,196,184,.04)');
     grad.addColorStop(.5, 'rgba(168,85,247,.02)');
@@ -47,47 +65,37 @@ const API_BASE = 'http://localhost:5000/api';
     ctx.fillRect(0, 0, W, H);
 
     particles.forEach(p => {
-      // Move
-      p.x += p.vx;
-      p.y += p.vy;
-      if (p.x < 0)  { p.x = 0;  p.vx *= -1; }
-      if (p.x > W)  { p.x = W;  p.vx *= -1; }
-      if (p.y < 0)  { p.y = 0;  p.vy *= -1; }
-      if (p.y > H)  { p.y = H;  p.vy *= -1; }
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) { p.x = 0; p.vx *= -1; }
+      if (p.x > W) { p.x = W; p.vx *= -1; }
+      if (p.y < 0) { p.y = 0; p.vy *= -1; }
+      if (p.y > H) { p.y = H; p.vy *= -1; }
 
-      // Mouse attraction (subtle)
       const dx = mouse.x - p.x, dy = mouse.y - p.y;
-      const md = Math.sqrt(dx*dx + dy*dy);
-      if (md < 180) {
-        p.x += dx / md * .25;
-        p.y += dy / md * .25;
-      }
+      const md = Math.sqrt(dx * dx + dy * dy);
+      if (md < 180) { p.x += dx / md * .25; p.y += dy / md * .25; }
 
-      // Draw particle
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = PARTICLE_COLOR + p.opacity + ')';
+      ctx.fillStyle = `rgba(14,196,184,${p.opacity})`;
       ctx.fill();
     });
 
-    // Draw connecting lines
     for (let i = 0; i < particles.length; i++) {
       for (let j = i + 1; j < particles.length; j++) {
         const dx = particles[i].x - particles[j].x;
         const dy = particles[i].y - particles[j].y;
-        const d  = Math.sqrt(dx*dx + dy*dy);
+        const d  = Math.sqrt(dx * dx + dy * dy);
         if (d < MAX_DIST) {
-          const alpha = (1 - d / MAX_DIST) * .18;
           ctx.beginPath();
           ctx.moveTo(particles[i].x, particles[i].y);
           ctx.lineTo(particles[j].x, particles[j].y);
-          ctx.strokeStyle = LINE_COLOR + alpha + ')';
+          ctx.strokeStyle = `rgba(14,196,184,${(1 - d / MAX_DIST) * .18})`;
           ctx.lineWidth = .7;
           ctx.stroke();
         }
       }
     }
-
     requestAnimationFrame(draw);
   }
 
@@ -118,25 +126,21 @@ document.querySelectorAll('.scroll-link').forEach(a => {
 
 /* ── Navbar Scroll State ── */
 const navbar = document.getElementById('navbar');
-let lastY = 0;
 window.addEventListener('scroll', () => {
-  const y = window.scrollY;
-  navbar.classList.toggle('scrolled', y > 40);
+  navbar.classList.toggle('scrolled', window.scrollY > 40);
   updateActiveLink();
-  lastY = y;
 }, { passive: true });
 
 function updateActiveLink() {
   const sections = ['home','webdev','multimedia','about','opportunities','book'];
-  const offset = 130;
   let cur = '';
   sections.forEach(id => {
     const el = document.getElementById(id);
-    if (el && window.scrollY >= el.offsetTop - offset) cur = id;
+    if (el && window.scrollY >= el.offsetTop - 130) cur = id;
   });
   document.querySelectorAll('.nav-link').forEach(a => {
-    const href = (a.getAttribute('href') || '').replace('#','');
-    a.classList.toggle('active', href === cur || (href === 'webdev' && cur === 'webdev'));
+    const href = (a.getAttribute('href') || '').replace('#', '');
+    a.classList.toggle('active', href === cur);
   });
 }
 
@@ -156,7 +160,6 @@ function closeMob() {
   hamburger.setAttribute('aria-expanded', 'false');
 }
 
-// Close on outside click
 document.addEventListener('click', e => {
   if (!navbar.contains(e.target)) closeMob();
 }, { passive: true });
@@ -175,19 +178,37 @@ const dateEl = document.getElementById('bookDate');
 if (dateEl) dateEl.min = new Date().toISOString().split('T')[0];
 
 /* ── Booking Form ── */
-const form       = document.getElementById('bookingForm');
-const submitBtn  = document.getElementById('submitBtn');
+const form        = document.getElementById('bookingForm');
+const submitBtn   = document.getElementById('submitBtn');
 const bookSuccess = document.getElementById('bookSuccess');
 
-function showErr(field, msg) {
+// Inline server error banner inside the form
+function showFormServerError(msg) {
+  let banner = document.getElementById('serverErrorBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'serverErrorBanner';
+    banner.className = 'server-error-banner';
+    form.insertBefore(banner, form.querySelector('button[type="submit"]'));
+  }
+  banner.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${msg}`;
+  banner.style.display = 'flex';
+}
+
+function hideFormServerError() {
+  const banner = document.getElementById('serverErrorBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+function showFieldErr(field, msg) {
   const errEl = document.getElementById(field + 'Error');
   const inEl  = document.getElementById('book' + field.charAt(0).toUpperCase() + field.slice(1));
   if (errEl) errEl.textContent = msg;
   if (inEl)  inEl.classList.add('err');
 }
 
-function clearErrs() {
-  ['name','email','date','time'].forEach(f => {
+function clearFieldErrs() {
+  ['name', 'email', 'date', 'time'].forEach(f => {
     const e = document.getElementById(f + 'Error');
     const i = document.getElementById('book' + f.charAt(0).toUpperCase() + f.slice(1));
     if (e) e.textContent = '';
@@ -197,20 +218,22 @@ function clearErrs() {
 
 function validate(d) {
   let ok = true;
-  clearErrs();
-  if (!d.name || d.name.length < 2) { showErr('name', 'Please enter your full name.'); ok = false; }
-  if (!d.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) { showErr('email', 'Please enter a valid email.'); ok = false; }
-  if (!d.date) { showErr('date', 'Please select a date.'); ok = false; }
+  clearFieldErrs();
+  hideFormServerError();
+  if (!d.name || d.name.length < 2)                            { showFieldErr('name', 'Please enter your full name.'); ok = false; }
+  if (!d.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)){ showFieldErr('email', 'Please enter a valid email.'); ok = false; }
+  if (!d.date)                                                   { showFieldErr('date', 'Please select a date.'); ok = false; }
   else {
     const sel = new Date(d.date), today = new Date();
-    today.setHours(0,0,0,0);
-    if (sel < today) { showErr('date', 'Please select a future date.'); ok = false; }
+    today.setHours(0, 0, 0, 0);
+    if (sel < today) { showFieldErr('date', 'Please select a future date.'); ok = false; }
   }
-  if (!d.time) { showErr('time', 'Please select a time slot.'); ok = false; }
+  if (!d.time) { showFieldErr('time', 'Please select a time slot.'); ok = false; }
   return ok;
 }
 
 function setLoading(v) {
+  if (!submitBtn) return;
   submitBtn.disabled = v;
   submitBtn.querySelector('.btext').style.display = v ? 'none' : 'flex';
   submitBtn.querySelector('.bload').style.display = v ? 'flex' : 'none';
@@ -226,26 +249,63 @@ form && form.addEventListener('submit', async e => {
     service: document.getElementById('bookService').value,
     message: document.getElementById('bookMessage').value.trim(),
   };
+
   if (!validate(data)) return;
+
   setLoading(true);
+
   try {
-    const res  = await fetch(`${API_BASE}/bookings`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const res  = await fetchWithTimeout(`${API_BASE}/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
     const json = await res.json();
-    if (!res.ok) { if (json.field) showErr(json.field, json.message); else alert(json.message || 'Something went wrong.'); return; }
-    form.style.display  = 'none';
-    bookSuccess.style.display = 'flex';
-  } catch { alert('Could not connect to the server. Please try again later.'); }
-  finally { setLoading(false); }
+
+    if (!res.ok) {
+      // Server responded with a validation/conflict error
+      if (json.field) {
+        showFieldErr(json.field, json.message);
+      } else {
+        showFormServerError(json.message || 'Something went wrong. Please try again.');
+      }
+      return;
+    }
+
+    // ✅ Success
+    form.style.display = 'none';
+    if (bookSuccess) {
+      bookSuccess.style.display = 'flex';
+    }
+
+  } catch (err) {
+    // Network error or timeout — show inline message, never hang
+    showFormServerError(err.message);
+  } finally {
+    // Always re-enable the button
+    setLoading(false);
+  }
 });
 
 function resetBooking() {
-  form && (form.reset(), form.style.display = 'block', clearErrs());
-  bookSuccess && (bookSuccess.style.display = 'none');
+  if (form) {
+    form.reset();
+    form.style.display = 'block';
+    clearFieldErrs();
+    hideFormServerError();
+  }
+  if (bookSuccess) bookSuccess.style.display = 'none';
 }
 
 /* ── Sample Works Modal ── */
 function showSample(type) {
-  const titles = { web:'Web Development Portfolio', multimedia:'Multimedia Portfolio', video:'Video Works', photo:'Photo Works' };
+  const titles = {
+    web: 'Web Development Portfolio',
+    multimedia: 'Multimedia Portfolio',
+    video: 'Video Works',
+    photo: 'Photo Works',
+  };
   document.getElementById('sampleTitle').textContent = titles[type] || 'Sample Works';
   document.getElementById('sampleModal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -262,10 +322,10 @@ document.getElementById('sampleModal')?.addEventListener('click', e => {
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSample(); });
 
-/* ── Logo → top ── */
+/* ── Logo → scroll top ── */
 document.querySelector('.nav-logo')?.addEventListener('click', () => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-/* ── Init active link ── */
+/* ── Init ── */
 updateActiveLink();
